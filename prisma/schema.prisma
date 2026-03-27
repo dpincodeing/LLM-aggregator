@@ -1,0 +1,148 @@
+// =============================================================================
+// FILE: prisma/schema.prisma
+// PURPOSE: Database schema for the AI Aggregator BYOK (Bring Your Own Key) backend.
+//
+// NORMALIZATION NOTES (3NF):
+//   - 1NF: Every column holds atomic values; no repeating groups.
+//   - 2NF: All non-key columns depend on the WHOLE primary key.
+//         `User_Keys` uses a composite PK (userId + providerId), ensuring no
+//          partial dependency — provider metadata never lives in User_Keys.
+//   - 3NF: No transitive dependencies.
+//         Provider metadata (displayName, baseUrl, modelId) lives ONLY in the
+//         `Provider` table, never duplicated into `UserKey`.
+//
+// SECURITY DESIGN:
+//   - Raw API keys are NEVER stored. Only AES-256-GCM ciphertext + IV + authTag.
+//   - The Data Encryption Key (DEK) never touches the database; it lives only
+//     in the process environment (see crypto.ts).
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// TABLE: User
+// Stores identity and authentication metadata for registered users.
+// No provider-specific or key-specific data lives here (3NF compliance).
+// =============================================================================
+model User {
+  /// Internal surrogate primary key — UUID preferred over sequential int
+  /// to prevent enumeration attacks on the API layer.
+  id        String   @id @default(uuid()) @db.Uuid
+
+  /// Unique email used for authentication. Indexed for fast login lookups.
+  email     String   @unique @db.VarChar(320)
+
+  /// Argon2id password hash. NEVER store plaintext passwords.
+  /// The application layer is responsible for hashing before insert.
+  passwordHash String  @map("password_hash") @db.Text
+
+  /// Soft-delete / account suspension flag. Safer than hard deletes.
+  isActive  Boolean  @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt      @map("updated_at") @db.Timestamptz()
+
+  /// One user can have keys for multiple providers (1-to-many → UserKey).
+  userKeys  UserKey[]
+
+  @@map("users")
+}
+
+// =============================================================================
+// TABLE: Provider
+// Static configuration table — one row per supported LLM provider.
+// Seeded at deploy time; not mutated by user actions.
+//
+// Keeping this data separate from UserKey is the core of the 3NF design:
+// if OpenAI's base URL ever changes, we update ONE row here, not thousands
+// of UserKey rows.
+// =============================================================================
+model Provider {
+  /// Stable slug used as FK target and as the factory key ('openai', 'anthropic').
+  id          String  @id @db.VarChar(50)   // e.g. "openai", "anthropic"
+
+  /// Human-readable label shown in the UI.
+  displayName String  @map("display_name") @db.VarChar(100)
+
+  /// The provider's API base URL. Centralised here so strategy classes
+  /// can read it from the DB instead of being hard-coded.
+  baseUrl     String  @map("base_url") @db.VarChar(255)
+
+  /// Default model identifier for this provider.
+  /// Can be overridden per-request at the application layer.
+  defaultModel String @map("default_model") @db.VarChar(100)
+
+  /// Whether this provider is currently enabled for new key registrations.
+  isEnabled   Boolean @default(true) @map("is_enabled")
+
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime @updatedAt      @map("updated_at") @db.Timestamptz()
+
+  /// One provider can be referenced by many UserKey rows.
+  userKeys    UserKey[]
+
+  @@map("providers")
+}
+
+// =============================================================================
+// TABLE: UserKey
+// Association table linking a User to a Provider with their encrypted API key.
+//
+// COMPOSITE SUPER KEY: (userId + providerId) is the natural composite PK.
+// This enforces the business rule: one user can have AT MOST one key per provider.
+//
+// AES-256-GCM STORAGE FIELDS:
+//   encryptedKey  — base64-encoded ciphertext of the raw API key.
+//   iv            — base64-encoded 12-byte Initialization Vector (unique per encryption).
+//   authTag       — base64-encoded 16-byte GCM authentication tag for integrity verification.
+//
+// All three fields are required together for decryption. Storing them in the DB
+// is safe because security derives from the secret DEK (env var), not from
+// hiding the IV or authTag.
+// =============================================================================
+model UserKey {
+  /// FK → User.id
+  userId      String   @map("user_id") @db.Uuid
+
+  /// FK → Provider.id (e.g. "openai")
+  providerId  String   @map("provider_id") @db.VarChar(50)
+
+  /// AES-256-GCM ciphertext of the plaintext API key, base64-encoded.
+  encryptedKey String  @map("encrypted_key") @db.Text
+
+  /// 12-byte GCM Initialization Vector, base64-encoded.
+  /// MUST be unique per encryption operation — generated fresh each time
+  /// the key is updated.
+  iv          String   @db.VarChar(24)   // 12 bytes → 16 base64 chars (padded to 24)
+
+  /// 16-byte GCM Authentication Tag, base64-encoded.
+  /// Verifies that the ciphertext has not been tampered with.
+  authTag     String   @map("auth_tag") @db.VarChar(24)
+
+  /// Soft-delete: allows users to "remove" a key without losing audit history.
+  isActive    Boolean  @default(true) @map("is_active")
+
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime @updatedAt      @map("updated_at") @db.Timestamptz()
+
+  // ----- Relations -----
+  user        User     @relation(fields: [userId],     references: [id], onDelete: Cascade)
+  provider    Provider @relation(fields: [providerId], references: [id], onDelete: Restrict)
+
+  // ----- Composite Primary Key (Super Key) -----
+  // Enforces: one user, one key, per provider. No duplicates possible at DB level.
+  @@id([userId, providerId])
+
+  // Indexed individually to support efficient queries in both directions.
+  @@index([userId])
+  @@index([providerId])
+
+  @@map("user_keys")
+}
