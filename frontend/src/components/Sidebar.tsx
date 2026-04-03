@@ -1,21 +1,33 @@
-
-import { MessageSquare, Key, Settings, Compass } from 'lucide-react';
+import { MessageSquare, Key, Settings, Compass, Layout } from 'lucide-react';
 
 const Sidebar = () => {
   return (
     <div className="sidebar">
-      <div className="sidebar-logo">
-        <Compass size={28} />
+      <div className="sidebar-brand">
+        <Compass size={24} className="sidebar-logo-icon" />
+        <span>LLM Aggregator</span>
       </div>
       
-      <div className="sidebar-icon active" title="Chat">
-        <MessageSquare size={20} />
+      <div className="sidebar-nav">
+        <div className="sidebar-item active">
+          <MessageSquare size={18} />
+          <span>Chat interface</span>
+        </div>
+        <div className="sidebar-item">
+          <Layout size={18} />
+          <span>Dashboard</span>
+        </div>
+        <div className="sidebar-item">
+          <Key size={18} />
+          <span>API Keys</span>
+        </div>
       </div>
-      <div className="sidebar-icon" title="Add LLM APIs">
-        <Key size={20} />
-      </div>
-      <div className="sidebar-icon" title="Settings">
-        <Settings size={20} />
+
+      <div className="sidebar-nav" style={{ marginTop: 'auto' }}>
+        <div className="sidebar-item">
+          <Settings size={18} />
+          <span>Settings</span>
+        </div>
       </div>
     </div>
   );

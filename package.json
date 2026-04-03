@@ -8,7 +8,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "dev": "tsx watch --env-file=.env src/examples/chat-usage.ts",
+    "dev": "tsx watch --env-file=.env src/server.ts",
+    "chat": "tsx watch --env-file=.env src/examples/chat-usage.ts",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev"
   },

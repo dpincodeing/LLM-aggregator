@@ -108,16 +108,20 @@ const ChatInterface = () => {
             <div className={`message-avatar ${msg.role}`}>
               {msg.role === 'bot' ? <Bot size={18} /> : <User size={18} />}
             </div>
-            <div className={`message-bubble ${msg.role}`}>
-              {msg.content}
+            <div className="message-content">
+              <div className={`message-bubble ${msg.role}`}>
+                {msg.content}
+              </div>
             </div>
           </div>
         ))}
         {isTyping && (
            <div className="message-wrapper bot">
              <div className="message-avatar bot"><Bot size={18} /></div>
-             <div className="message-bubble bot" style={{ fontStyle: 'italic', opacity: 0.7 }}>
-               Generating...
+             <div className="message-content">
+               <div className="message-bubble bot" style={{ opacity: 0.6, fontSize: '13px' }}>
+                 Assistant is typing...
+               </div>
              </div>
            </div>
         )}
@@ -130,11 +134,11 @@ const ChatInterface = () => {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-          placeholder="Ask anything or prompt your model..." 
+          placeholder="Ask anything..." 
           className="chat-input"
           disabled={isTyping}
         />
-        <button onClick={handleSend} className="btn-send" disabled={isTyping} style={{ opacity: isTyping ? 0.5 : 1 }}>
+        <button onClick={handleSend} className="btn-send" disabled={isTyping}>
           <Send size={18} />
         </button>
       </div>
